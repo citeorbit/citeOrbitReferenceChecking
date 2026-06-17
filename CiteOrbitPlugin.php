@@ -289,26 +289,52 @@ class CiteOrbitPlugin extends GenericPlugin
     }
 
     /**
-     * Append the delegated click-handler script to the workflow page.
+     * Append the delegated click-handler script to the editorial dashboard.
+     *
+     * In 3.5 the submission workflow (incl. the Publication > References tab)
+     * lives inside the editorial dashboard Vue SPA — there is no workflow.tpl —
+     * so the script is injected on `dashboard/editors.tpl`. The click handler is
+     * a delegated document listener, so it still binds the References button
+     * even though Vue renders it dynamically after page load.
      *
      * @param string $hookName `TemplateManager::display`
      * @param array $args [$templateMgr, &$template, &$output]
      */
     public function injectWorkflowScript($hookName, $args)
     {
-        if (($args[1] ?? '') !== 'workflow/workflow.tpl') {
+        if (($args[1] ?? '') !== 'dashboard/editors.tpl') {
             return false;
         }
         $templateMgr = $args[0];
-        // The workflow page doesn't preload the OpenWindowRequest link-action JS,
-        // so our "Open report" grid link can't bind (renders dead/grey). Load it.
-        $templateMgr->addJavaScript(
-            'citeOrbitOpenWindowReq',
-            Application::get()->getRequest()->getBaseUrl() . '/lib/pkp/js/classes/linkAction/OpenWindowRequest.js',
-            ['contexts' => 'backend']
-        );
+
+        // Build the file-check component URL server-side (the client appends the
+        // submissionFileId it reads from each file row's download link).
+        $request = Application::get()->getRequest();
+        $context = $request->getContext();
+        $fileCheckUrl = '';
+        if ($context) {
+            $fileCheckUrl = $request->getDispatcher()->url(
+                $request,
+                Application::ROUTE_COMPONENT,
+                $context->getPath(),
+                'plugins.generic.citeOrbit.controllers.CiteOrbitHandler',
+                'checkFile'
+            );
+        }
+        $prelude = 'window.CITEORBIT_FILECHECK_URL=' . json_encode($fileCheckUrl) . ';';
+
         $js = <<<'JS'
 (function(){
+    // 3.5's dashboard SPA doesn't ship the legacy .pkpButton styles, so style our
+    // controls via injected CSS (covers the Vue-rendered, dynamically-added DOM).
+    var st = document.createElement('style');
+    st.textContent =
+        '.citeorbitCheckBtn{display:inline-block;background:#1e6bb8;color:#fff;border:none;padding:0.5rem 1rem;border-radius:4px;cursor:pointer;font-weight:600;font-size:0.9rem;line-height:1.2;}'
+      + '.citeorbitCheckBtn:hover{background:#17578f;}'
+      + '.citeorbitFileBtn{display:inline-block;background:none;border:none;color:#1e6bb8;margin-inline-start:0.75rem;padding:0;cursor:pointer;font-weight:600;font-size:0.85rem;text-decoration:underline;font-family:inherit;white-space:nowrap;}'
+      + '.citeorbitCheckBtn[data-co-armed],.citeorbitFileBtn[data-co-armed]{background:#b45309;color:#fff;text-decoration:none;border-radius:4px;padding:0.2rem 0.55rem;}'
+      + '.citeorbitReportLink{display:inline-block;margin-inline-start:0.5rem;color:#1e6bb8;text-decoration:underline;font-size:0.85rem;white-space:nowrap;}';
+    document.head.appendChild(st);
     function notify(msg, type){
         if (window.pkp && pkp.eventBus && pkp.eventBus.$emit) pkp.eventBus.$emit('notify', msg, type);
         else alert(msg);
@@ -317,24 +343,26 @@ class CiteOrbitPlugin extends GenericPlugin
         if (b.getAttribute('data-co-busy')) return;
         b.setAttribute('data-co-busy', '1');
         var token = (window.pkp && pkp.currentUser && pkp.currentUser.csrfToken) || '';
+        var body = 'csrfToken=' + encodeURIComponent(token);
+        var pub = b.getAttribute('data-co-pub');           // references only
+        if (pub) body = 'publicationId=' + encodeURIComponent(pub) + '&' + body;
         fetch(b.getAttribute('data-co-url'), {
             method: 'POST',
             headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-            body: 'publicationId=' + encodeURIComponent(b.getAttribute('data-co-pub')) +
-                  '&csrfToken=' + encodeURIComponent(token)
+            body: body
         }).then(function(r){ return r.json(); }).then(function(d){
             var c = (d && d.content) || {};
             notify(c.message || 'Done', c.ok ? 'success' : 'warning');
             if (c.ok && c.reportUrl) {
-                var prev = document.getElementById('citeorbitReportLink');
-                if (prev) prev.remove();
+                var nx = b.nextElementSibling;
+                if (nx && nx.classList && nx.classList.contains('citeorbitReportLink')) nx.remove();
+                var srv = document.getElementById('citeorbitReportLink'); // server-rendered (refs)
+                if (srv && pub) srv.remove();
                 var a = document.createElement('a');
-                a.id = 'citeorbitReportLink';
+                a.className = 'citeorbitReportLink';
                 a.href = c.reportUrl; a.target = '_blank'; a.rel = 'noopener';
-                a.className = 'pkpButton';
-                a.style.marginInlineStart = '0.5rem';
                 a.textContent = 'Open CiteOrbit report';
-                if (b.parentNode) b.parentNode.appendChild(a);
+                b.insertAdjacentElement('afterend', a);
             }
             b.removeAttribute('data-co-busy');
         }).catch(function(err){
@@ -342,48 +370,80 @@ class CiteOrbitPlugin extends GenericPlugin
             b.removeAttribute('data-co-busy');
         });
     }
-    // Lightweight in-page confirmation modal (avoids the native browser dialog).
-    function confirmModal(message, onConfirm){
-        var ov = document.createElement('div');
-        ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:100000;display:flex;align-items:center;justify-content:center;';
-        var card = document.createElement('div');
-        card.style.cssText = 'background:#fff;max-width:440px;width:90%;border-radius:6px;box-shadow:0 12px 40px rgba(0,0,0,0.25);padding:1.5rem 1.5rem 1.25rem;font-family:inherit;';
-        var h = document.createElement('h2');
-        h.textContent = 'Validate with CiteOrbit';
-        h.style.cssText = 'margin:0 0 0.75rem;font-size:1.1rem;color:#002c40;';
-        var p = document.createElement('p');
-        p.textContent = message;
-        p.style.cssText = 'margin:0 0 1.25rem;color:#333;line-height:1.5;';
-        var row = document.createElement('div');
-        row.style.cssText = 'display:flex;gap:0.5rem;justify-content:flex-end;';
-        var cancel = document.createElement('button');
-        cancel.type = 'button'; cancel.className = 'pkpButton'; cancel.textContent = 'Cancel';
-        cancel.style.cssText = 'background:#e8eaed;color:#1a1a1a;';
-        var ok = document.createElement('button');
-        ok.type = 'button'; ok.className = 'pkpButton'; ok.textContent = 'Send to CiteOrbit';
-        function close(){ if (ov.parentNode) ov.parentNode.removeChild(ov); }
-        cancel.addEventListener('click', close);
-        ov.addEventListener('click', function(ev){ if (ev.target === ov) close(); });
-        ok.addEventListener('click', function(){ close(); onConfirm(); });
-        row.appendChild(cancel); row.appendChild(ok);
-        card.appendChild(h); card.appendChild(p); card.appendChild(row);
-        ov.appendChild(card); document.body.appendChild(ov);
-        ok.focus();
+    // 3.5 opens the workflow inside a Vue modal whose focus-trap blocks clicks
+    // outside its container, so a popup confirm can't be made reliably clickable.
+    // Confirm inline instead: first click arms the control (relabel + amber "uses
+    // credits" warning), second click sends. The controls live inside the
+    // interactive workflow modal, so their clicks work.
+    var armedEl = null, armedTimer = null;
+    function disarm(){
+        if (armedTimer) { clearTimeout(armedTimer); armedTimer = null; }
+        if (armedEl) {
+            if (armedEl.getAttribute('data-co-label') !== null) armedEl.textContent = armedEl.getAttribute('data-co-label');
+            armedEl.removeAttribute('data-co-armed');
+        }
+        armedEl = null;
     }
     document.addEventListener('click', function(e){
-        var b = e.target && e.target.closest ? e.target.closest('.citeorbitCheckBtn') : null;
+        var b = e.target && e.target.closest ? e.target.closest('.citeorbitCheckBtn,.citeorbitFileBtn') : null;
         if (!b || b.getAttribute('data-co-busy')) return;
         e.preventDefault();
-        var count = b.getAttribute('data-co-count');
-        var refs = (count && count !== '0') ? (count + ' references') : 'these references';
-        confirmModal(
-            'Send ' + refs + ' to CiteOrbit for validation? This uses credits from your CiteOrbit workspace.',
-            function(){ runCheck(b); }
-        );
+        if (armedEl === b) { disarm(); runCheck(b); return; }   // 2nd click -> send
+        if (armedEl) disarm();                                   // switching controls
+        if (b.getAttribute('data-co-label') === null) b.setAttribute('data-co-label', b.textContent);
+        var armedTxt;
+        if (b.classList.contains('citeorbitFileBtn')) {
+            armedTxt = 'Click again to validate — uses credits';
+        } else {
+            var count = b.getAttribute('data-co-count');
+            var refs = (count && count !== '0') ? (count + ' references') : 'these references';
+            armedTxt = 'Click again to send ' + refs + ' — uses credits';
+        }
+        b.textContent = armedTxt;
+        b.setAttribute('data-co-armed', '1');
+        armedEl = b;
+        armedTimer = setTimeout(disarm, 6000);
     }, false);
+
+    // Inject a "Validate with CiteOrbit" control into each manuscript file row.
+    // The new 3.5 file manager is a Vue component with no server-side hook, so we
+    // read the submissionFileId from the row's download link and add the control
+    // to the row's last cell. A MutationObserver re-adds it if Vue re-renders.
+    function injectFileButtons(){
+        if (!window.CITEORBIT_FILECHECK_URL) return;
+        var links = document.querySelectorAll('a[href*="submissionFileId="]');
+        for (var i = 0; i < links.length; i++) {
+            var a = links[i];
+            var name = (a.textContent || '').trim().toLowerCase();
+            if (!/\.(docx|doc|odt)$/.test(name)) continue;   // types CiteOrbit handles (PDF is rejected)
+            var m = a.href.match(/submissionFileId=(\d+)/);
+            if (!m) continue;
+            var row = a.closest('tr') || a.closest('li');
+            if (!row || row.querySelector('.citeorbitFileBtn')) continue;
+            var sep = window.CITEORBIT_FILECHECK_URL.indexOf('?') > -1 ? '&' : '?';
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'citeorbitFileBtn';
+            btn.setAttribute('data-co-file', m[1]);
+            btn.setAttribute('data-co-url', window.CITEORBIT_FILECHECK_URL + sep + 'submissionFileId=' + m[1]);
+            btn.textContent = 'Validate with CiteOrbit';
+            // Place it in the wide FILE NAME cell, right after the filename link.
+            var span = a.closest('span') || a;
+            span.insertAdjacentElement('afterend', btn);
+        }
+    }
+    var moTimer = null;
+    function startFileInjection(){
+        injectFileButtons();
+        new MutationObserver(function(){ clearTimeout(moTimer); moTimer = setTimeout(injectFileButtons, 300); })
+            .observe(document.body, {childList: true, subtree: true});
+    }
+    // The inline script runs in <head>, so document.body may not exist yet — wait for it.
+    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', startFileInjection); }
+    else { startFileInjection(); }
 })();
 JS;
-        $templateMgr->addJavaScript('citeOrbitButtonHandler', $js, ['inline' => true, 'contexts' => 'backend']);
+        $templateMgr->addJavaScript('citeOrbitButtonHandler', $prelude . $js, ['inline' => true, 'contexts' => 'backend']);
         return false;
     }
 
