@@ -1,17 +1,15 @@
 <?php
 
 /**
- * @file plugins/generic/citeOrbit/CiteOrbitSettingsForm.php
+ * @file plugins/generic/citeOrbit/CiteOrbitSettingsForm.inc.php
  *
  * @class CiteOrbitSettingsForm
  *
- * @brief Per-journal settings: CiteOrbit API base URL + API key.
+ * @brief Per-journal settings: CiteOrbit API key + default citation style.
+ *        OJS 3.3 port (global Form / import() idiom).
  */
 
-namespace APP\plugins\generic\citeOrbit;
-
-use APP\template\TemplateManager;
-use PKP\form\Form;
+import('lib.pkp.classes.form.Form');
 
 class CiteOrbitSettingsForm extends Form
 {
@@ -27,9 +25,9 @@ class CiteOrbitSettingsForm extends Form
         $this->_plugin = $plugin;
 
         parent::__construct($plugin->getTemplateResource('settingsForm.tpl'));
-        $this->addCheck(new \PKP\form\validation\FormValidator($this, 'apiKey', 'required', 'plugins.generic.citeOrbit.error.key'));
-        $this->addCheck(new \PKP\form\validation\FormValidatorPost($this));
-        $this->addCheck(new \PKP\form\validation\FormValidatorCSRF($this));
+        $this->addCheck(new FormValidator($this, 'apiKey', 'required', 'plugins.generic.citeOrbit.error.key'));
+        $this->addCheck(new FormValidatorPost($this));
+        $this->addCheck(new FormValidatorCSRF($this));
     }
 
     /**
@@ -53,7 +51,7 @@ class CiteOrbitSettingsForm extends Form
      * CiteOrbit CSL styles offered as the fallback "default style".
      * Keep the ids in sync with CiteOrbit's lib/csl-styles/registry.ts.
      */
-    public static function citationStyleOptions(): array
+    public static function citationStyleOptions()
     {
         return [
             '' => 'plugins.generic.citeOrbit.style.auto',

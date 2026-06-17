@@ -1,32 +1,27 @@
 <?php
 
 /**
- * @file plugins/generic/citeOrbit/controllers/CiteOrbitHandler.php
+ * @file plugins/generic/citeOrbit/controllers/CiteOrbitHandler.inc.php
  *
  * @class CiteOrbitHandler
  *
  * @brief Component handler: read a publication's references, send them to the
- *        CiteOrbit API, and return a user-facing message.
+ *        CiteOrbit API, and return a user-facing message. OJS 3.3 port.
+ *
+ * The 3.3 component router instantiates this class with no constructor args
+ * (it has no &$componentInstance slot in the LoadComponentHandler hook), so the
+ * plugin is resolved from the registry rather than injected.
  */
 
-namespace APP\plugins\generic\citeOrbit\controllers;
-
-use APP\core\Application;
-use APP\core\Services;
-use APP\facades\Repo;
-use APP\handler\Handler;
-use APP\notification\NotificationManager;
-use APP\plugins\generic\citeOrbit\CiteOrbitPlugin;
-use PKP\core\JSONMessage;
-use PKP\db\DAORegistry;
-use PKP\notification\PKPNotification;
-use PKP\plugins\PluginRegistry;
-use PKP\security\authorization\ContextAccessPolicy;
-use PKP\security\Role;
+import('classes.handler.Handler');
+import('lib.pkp.classes.security.authorization.ContextAccessPolicy');
+import('lib.pkp.classes.security.Role');
+import('lib.pkp.classes.core.JSONMessage');
+import('classes.notification.NotificationManager');
 
 class CiteOrbitHandler extends Handler
 {
-    /** @var \APP\plugins\generic\citeOrbit\CiteOrbitPlugin */
+    /** @var CiteOrbitPlugin */
     public $plugin;
 
     public function __construct($plugin = null)
@@ -34,7 +29,7 @@ class CiteOrbitHandler extends Handler
         parent::__construct();
         $this->plugin = $plugin ?: PluginRegistry::getPlugin('generic', 'citeorbitplugin');
         $this->addRoleAssignment(
-            [Role::ROLE_ID_MANAGER, Role::ROLE_ID_SUB_EDITOR, Role::ROLE_ID_ASSISTANT],
+            [ROLE_ID_MANAGER, ROLE_ID_SUB_EDITOR, ROLE_ID_ASSISTANT],
             ['check', 'checkFile']
         );
     }
@@ -62,7 +57,7 @@ class CiteOrbitHandler extends Handler
             return $this->msg(false, __('plugins.generic.citeOrbit.error.key'));
         }
 
-        $publication = Repo::publication()->get($publicationId);
+        $publication = Services::get('publication')->get($publicationId);
         if (!$publication) {
             return $this->msg(false, 'Publication not found.');
         }
@@ -82,7 +77,7 @@ class CiteOrbitHandler extends Handler
             return $this->msg(false, 'No references found to check.');
         }
 
-        $submission = Repo::submission()->get($publication->getData('submissionId'));
+        $submission = Services::get('submission')->get($publication->getData('submissionId'));
         $payload = [
             'submission_id' => $submission ? $submission->getId() : 0,
             'publication_id' => $publicationId,
@@ -116,10 +111,9 @@ class CiteOrbitHandler extends Handler
             // Persist on the publication so the "Open report" link survives a
             // reload (best-effort: a check already succeeded regardless).
             try {
-                Repo::publication()->edit($publication, [
-                    CiteOrbitPlugin::REPORT_ID_FIELD => $reportId,
-                    CiteOrbitPlugin::STATUS_FIELD => 'queued',
-                ]);
+                $publication->setData(CiteOrbitPlugin::REPORT_ID_FIELD, $reportId);
+                $publication->setData(CiteOrbitPlugin::STATUS_FIELD, 'queued');
+                DAORegistry::getDAO('PublicationDAO')->updateObject($publication);
             } catch (\Throwable $e) {
                 error_log('[CiteOrbit] could not persist report id: ' . $e->getMessage());
             }
@@ -141,7 +135,7 @@ class CiteOrbitHandler extends Handler
      * to the plugin's "default style" setting; otherwise null (CiteOrbit defaults
      * to apa-7).
      */
-    private function resolveCitationStyle($context): ?string
+    private function resolveCitationStyle($context)
     {
         // OJS Citation Style Language id => CiteOrbit CSL id.
         $map = [
@@ -182,30 +176,30 @@ class CiteOrbitHandler extends Handler
         $submissionFileId = (int) $request->getUserVar('submissionFileId');
         $key = $this->plugin->getSetting($context->getId(), 'apiKey');
         if (!$key) {
-            return $this->notify($request, PKPNotification::NOTIFICATION_TYPE_ERROR, __('plugins.generic.citeOrbit.error.key'));
+            return $this->notify($request, NOTIFICATION_TYPE_ERROR, __('plugins.generic.citeOrbit.error.key'));
         }
 
-        $submissionFile = Repo::submissionFile()->get($submissionFileId);
+        $submissionFile = Services::get('submissionFile')->get($submissionFileId);
         if (!$submissionFile) {
-            return $this->notify($request, PKPNotification::NOTIFICATION_TYPE_ERROR, 'File not found.');
+            return $this->notify($request, NOTIFICATION_TYPE_ERROR, 'File not found.');
         }
 
         // PDF is not supported for manuscript validation — reject before doing
         // any work (no upload, no credits spent).
         if (strtolower((string) $submissionFile->getData('mimetype')) === 'application/pdf') {
-            return $this->notify($request, PKPNotification::NOTIFICATION_TYPE_WARNING, 'CiteOrbit does not support PDF file types.');
+            return $this->notify($request, NOTIFICATION_TYPE_WARNING, 'CiteOrbit does not support PDF file types.');
         }
 
         $fileService = Services::get('file');
         $file = $fileService->get($submissionFile->getData('fileId'));
         if (!$file || !$fileService->fs->has($file->path)) {
-            return $this->notify($request, PKPNotification::NOTIFICATION_TYPE_ERROR, 'This file could not be read on the server.');
+            return $this->notify($request, NOTIFICATION_TYPE_ERROR, 'This file could not be read on the server.');
         }
         try {
             $contents = $fileService->fs->read($file->path);
         } catch (\Throwable $e) {
             error_log('[CiteOrbit] file read failed: ' . $e->getMessage());
-            return $this->notify($request, PKPNotification::NOTIFICATION_TYPE_ERROR, 'This file could not be read on the server.');
+            return $this->notify($request, NOTIFICATION_TYPE_ERROR, 'This file could not be read on the server.');
         }
         $filename = $submissionFile->getLocalizedData('name') ?: 'manuscript';
         $mime = (string) $submissionFile->getData('mimetype');
@@ -229,7 +223,7 @@ class CiteOrbitHandler extends Handler
             $body = json_decode((string) $response->getBody(), true) ?: [];
         } catch (\Throwable $e) {
             error_log('[CiteOrbit] file-check connection error: ' . $e->getMessage());
-            return $this->notify($request, PKPNotification::NOTIFICATION_TYPE_ERROR, "Couldn't reach CiteOrbit. Please try again in a moment.");
+            return $this->notify($request, NOTIFICATION_TYPE_ERROR, "Couldn't reach CiteOrbit. Please try again in a moment.");
         }
 
         $code = $body['code'] ?? '';
@@ -239,27 +233,27 @@ class CiteOrbitHandler extends Handler
             // Persist on the file so the grid shows a persistent "Open report"
             // link (best-effort). Refresh this row so the link appears at once.
             try {
-                Repo::submissionFile()->edit($submissionFile, [CiteOrbitPlugin::REPORT_ID_FIELD => $reportId]);
+                Services::get('submissionFile')->edit($submissionFile, [CiteOrbitPlugin::REPORT_ID_FIELD => $reportId], $request);
             } catch (\Throwable $e) {
                 error_log('[CiteOrbit] could not persist file report id: ' . $e->getMessage());
             }
-            return $this->notify($request, PKPNotification::NOTIFICATION_TYPE_SUCCESS, __('plugins.generic.citeOrbit.notify.queuedFile'), $submissionFileId);
+            return $this->notify($request, NOTIFICATION_TYPE_SUCCESS, __('plugins.generic.citeOrbit.notify.queuedFile'), $submissionFileId);
         }
-        $type = ($code === 'insufficient_credits') ? PKPNotification::NOTIFICATION_TYPE_WARNING : PKPNotification::NOTIFICATION_TYPE_ERROR;
+        $type = ($code === 'insufficient_credits') ? NOTIFICATION_TYPE_WARNING : NOTIFICATION_TYPE_ERROR;
         return $this->notify($request, $type, $message);
     }
 
-    private function notify($request, int $type, string $message, ?int $elementId = null): JSONMessage
+    private function notify($request, $type, $message, $elementId = null)
     {
         $mgr = new NotificationManager();
         $mgr->createTrivialNotification($request->getUser()->getId(), $type, ['contents' => $message]);
         // Return a data-changed event (not a bare JSONMessage) so OJS refreshes
         // the affected grid row (revealing the new "Open report" link) and
         // fetches the pending notification.
-        return \PKP\db\DAO::getDataChangedEvent($elementId);
+        return DAO::getDataChangedEvent($elementId);
     }
 
-    private function msg(bool $ok, string $message, array $extra = []): JSONMessage
+    private function msg($ok, $message, $extra = [])
     {
         return new JSONMessage(true, array_merge(['ok' => $ok, 'message' => $message], $extra));
     }
