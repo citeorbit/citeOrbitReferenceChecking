@@ -19,7 +19,7 @@ use APP\notification\NotificationManager;
 use APP\plugins\generic\citeOrbit\CiteOrbitPlugin;
 use PKP\core\JSONMessage;
 use PKP\db\DAORegistry;
-use PKP\notification\PKPNotification;
+use PKP\notification\Notification;
 use PKP\plugins\PluginRegistry;
 use PKP\security\authorization\ContextAccessPolicy;
 use PKP\security\Role;
@@ -182,30 +182,30 @@ class CiteOrbitHandler extends Handler
         $submissionFileId = (int) $request->getUserVar('submissionFileId');
         $key = $this->plugin->getSetting($context->getId(), 'apiKey');
         if (!$key) {
-            return $this->notify($request, PKPNotification::NOTIFICATION_TYPE_ERROR, __('plugins.generic.citeOrbit.error.key'));
+            return $this->notify($request, Notification::NOTIFICATION_TYPE_ERROR, __('plugins.generic.citeOrbit.error.key'));
         }
 
         $submissionFile = Repo::submissionFile()->get($submissionFileId);
         if (!$submissionFile) {
-            return $this->notify($request, PKPNotification::NOTIFICATION_TYPE_ERROR, 'File not found.');
+            return $this->notify($request, Notification::NOTIFICATION_TYPE_ERROR, 'File not found.');
         }
 
         // PDF is not supported for manuscript validation — reject before doing
         // any work (no upload, no credits spent).
         if (strtolower((string) $submissionFile->getData('mimetype')) === 'application/pdf') {
-            return $this->notify($request, PKPNotification::NOTIFICATION_TYPE_WARNING, 'CiteOrbit does not support PDF file types.');
+            return $this->notify($request, Notification::NOTIFICATION_TYPE_WARNING, 'CiteOrbit does not support PDF file types.');
         }
 
         $fileService = Services::get('file');
         $file = $fileService->get($submissionFile->getData('fileId'));
         if (!$file || !$fileService->fs->has($file->path)) {
-            return $this->notify($request, PKPNotification::NOTIFICATION_TYPE_ERROR, 'This file could not be read on the server.');
+            return $this->notify($request, Notification::NOTIFICATION_TYPE_ERROR, 'This file could not be read on the server.');
         }
         try {
             $contents = $fileService->fs->read($file->path);
         } catch (\Throwable $e) {
             error_log('[CiteOrbit] file read failed: ' . $e->getMessage());
-            return $this->notify($request, PKPNotification::NOTIFICATION_TYPE_ERROR, 'This file could not be read on the server.');
+            return $this->notify($request, Notification::NOTIFICATION_TYPE_ERROR, 'This file could not be read on the server.');
         }
         $filename = $submissionFile->getLocalizedData('name') ?: 'manuscript';
         $mime = (string) $submissionFile->getData('mimetype');
@@ -229,7 +229,7 @@ class CiteOrbitHandler extends Handler
             $body = json_decode((string) $response->getBody(), true) ?: [];
         } catch (\Throwable $e) {
             error_log('[CiteOrbit] file-check connection error: ' . $e->getMessage());
-            return $this->notify($request, PKPNotification::NOTIFICATION_TYPE_ERROR, "Couldn't reach CiteOrbit. Please try again in a moment.");
+            return $this->notify($request, Notification::NOTIFICATION_TYPE_ERROR, "Couldn't reach CiteOrbit. Please try again in a moment.");
         }
 
         $code = $body['code'] ?? '';
@@ -243,9 +243,9 @@ class CiteOrbitHandler extends Handler
             } catch (\Throwable $e) {
                 error_log('[CiteOrbit] could not persist file report id: ' . $e->getMessage());
             }
-            return $this->notify($request, PKPNotification::NOTIFICATION_TYPE_SUCCESS, __('plugins.generic.citeOrbit.notify.queuedFile'), $submissionFileId);
+            return $this->notify($request, Notification::NOTIFICATION_TYPE_SUCCESS, __('plugins.generic.citeOrbit.notify.queuedFile'), $submissionFileId);
         }
-        $type = ($code === 'insufficient_credits') ? PKPNotification::NOTIFICATION_TYPE_WARNING : PKPNotification::NOTIFICATION_TYPE_ERROR;
+        $type = ($code === 'insufficient_credits') ? Notification::NOTIFICATION_TYPE_WARNING : Notification::NOTIFICATION_TYPE_ERROR;
         return $this->notify($request, $type, $message);
     }
 

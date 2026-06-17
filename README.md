@@ -1,6 +1,6 @@
 # CiteOrbit Reference Validation — OJS Plugin
 
-A generic plugin for **OJS 3.4** that sends a submission's references or a full
+A generic plugin for **OJS 3.5** that sends a submission's references or a full
 manuscript file to [CiteOrbit](https://app.citeorbit.com) for citation
 verification, then links the editorial UI straight to the report.
 
@@ -43,7 +43,7 @@ the full verification report there.
 
 ## Requirements
 
-- **OJS 3.4** (uses 3.4 hooks, schemas, and Form Builder fields).
+- **OJS 3.5** (uses 3.5 hooks, schemas, and Form Builder fields).
 - A **CiteOrbit account** with an API-key-enabled workspace.
 - The OJS server must be able to reach your CiteOrbit instance over HTTPS
   (`https://app.citeorbit.com` in production).

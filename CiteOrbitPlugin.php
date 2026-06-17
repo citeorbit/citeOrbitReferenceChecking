@@ -3,7 +3,7 @@
 /**
  * @file plugins/generic/citeOrbit/CiteOrbitPlugin.php
  *
- * CiteOrbit Reference Checking plugin (OJS 3.4).
+ * CiteOrbit Reference Checking plugin (OJS 3.5).
  *
  * @class CiteOrbitPlugin
  *
