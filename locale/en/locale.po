@@ -1,0 +1,63 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: \n"
+"POT-Creation-Date: 2026-06-16\n"
+"PO-Revision-Date: 2026-06-16\n"
+"Language: en\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "plugins.generic.citeOrbit.displayName"
+msgstr "CiteOrbit Reference Validation"
+
+msgid "plugins.generic.citeOrbit.description"
+msgstr "Send a publication's references to CiteOrbit for verification and view the report in CiteOrbit."
+
+msgid "plugins.generic.citeOrbit.apiBaseUrl"
+msgstr "CiteOrbit API base URL"
+
+msgid "plugins.generic.citeOrbit.apiBaseUrl.description"
+msgstr "The base URL of your CiteOrbit instance, e.g. http://localhost:3000"
+
+msgid "plugins.generic.citeOrbit.apiKey"
+msgstr "CiteOrbit API key"
+
+msgid "plugins.generic.citeOrbit.apiKey.description"
+msgstr "The workspace API key generated in CiteOrbit (starts with cob_live_)."
+
+msgid "plugins.generic.citeOrbit.defaultStyle"
+msgstr "Default citation style"
+
+msgid "plugins.generic.citeOrbit.defaultStyle.description"
+msgstr "CiteOrbit uses this journal's Citation Style Language style automatically. This fallback is only used when that style has no CiteOrbit equivalent. Leave on \"Auto\" to default to APA 7."
+
+msgid "plugins.generic.citeOrbit.style.auto"
+msgstr "Auto (use the journal's citation style)"
+
+msgid "plugins.generic.citeOrbit.error.url"
+msgstr "Enter a valid CiteOrbit API base URL."
+
+msgid "plugins.generic.citeOrbit.error.key"
+msgstr "Enter your CiteOrbit API key."
+
+msgid "plugins.generic.citeOrbit.button.check"
+msgstr "Validate with CiteOrbit"
+
+msgid "plugins.generic.citeOrbit.button.openReport"
+msgstr "Open CiteOrbit report"
+
+msgid "plugins.generic.citeOrbit.button.checkFile"
+msgstr "Validate with CiteOrbit"
+
+msgid "plugins.generic.citeOrbit.confirmFile"
+msgstr "Send this file to CiteOrbit for validation? This uses credits from your CiteOrbit workspace."
+
+msgid "plugins.generic.citeOrbit.notify.queued"
+msgstr "References sent to CiteOrbit. The report will be ready shortly."
+
+msgid "plugins.generic.citeOrbit.notify.queuedFile"
+msgstr "Manuscript sent to CiteOrbit. The report will be ready shortly."
+
+msgid "plugins.generic.citeOrbit.notify.error"
+msgstr "CiteOrbit error: {$message}"
